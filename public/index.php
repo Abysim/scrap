@@ -24,7 +24,7 @@ if ($path !== '/scrape' && $path !== '/') {
 
 // --- API key validation ---
 $apiKey = $_GET['api_key'] ?? '';
-if ($apiKey !== ($_ENV['API_KEY'] ?? '')) {
+if (!hash_equals($_ENV['API_KEY'] ?? '', $apiKey)) {
     http_response_code(401);
     echo 'Unauthorized';
     exit;
@@ -48,7 +48,12 @@ if (!in_array($parsed['scheme'] ?? '', ['http', 'https'])) {
 // SSRF prevention: reject private/reserved IPs
 $host = $parsed['host'] ?? '';
 $ip = gethostbyname($host);
-if ($ip !== $host) {
+if ($ip === $host && !filter_var($host, FILTER_VALIDATE_IP)) {
+    http_response_code(400);
+    echo 'DNS resolution failed';
+    exit;
+}
+if (filter_var($ip, FILTER_VALIDATE_IP)) {
     $flags = FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE;
     if (!filter_var($ip, FILTER_VALIDATE_IP, $flags)) {
         http_response_code(400);
@@ -70,7 +75,7 @@ set_time_limit(25);
 
 // --- Scrape ---
 $scraper = new \App\Scraper();
-$result = $scraper->scrape($url);
+$result = $scraper->scrape($url, $ip);
 
 flock($lock, LOCK_UN);
 fclose($lock);

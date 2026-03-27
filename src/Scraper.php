@@ -13,18 +13,16 @@ class Scraper
         $this->curlPath = $_ENV['CURL_IMPERSONATE_PATH'] ?? (getenv('HOME') . '/bin/curl_chrome131');
     }
 
-    public function scrape(string $url): array
+    public function scrape(string $url, ?string $resolvedIp = null): array
     {
         $start = microtime(true);
 
-        // Fast path: TLS impersonation
-        $html = $this->fetchViaTls($url);
+        $html = $this->fetchViaTls($url, $resolvedIp);
         if ($html !== null) {
             $this->log($url, 'tls', 200, $start);
             return ['html' => $html, 'method' => 'tls', 'error' => null];
         }
 
-        // Heavy path: Chromium (Phase 1B — stub returns null)
         $html = $this->fetchViaBrowser($url);
         if ($html !== null) {
             $this->log($url, 'browser', 200, $start);
@@ -35,11 +33,25 @@ class Scraper
         return ['html' => null, 'method' => null, 'error' => 'All methods failed'];
     }
 
-    public function fetchViaTls(string $url): ?string
+    private function fetchViaTls(string $url, ?string $resolvedIp = null): ?string
     {
+        // Pin DNS to the already-validated IP to prevent DNS rebinding (TOCTOU)
+        $resolve = '';
+        if ($resolvedIp !== null) {
+            $host = parse_url($url, PHP_URL_HOST);
+            if ($host !== null) {
+                $resolve = sprintf(
+                    '--resolve %s:80:%s --resolve %s:443:%s',
+                    escapeshellarg($host), escapeshellarg($resolvedIp),
+                    escapeshellarg($host), escapeshellarg($resolvedIp)
+                );
+            }
+        }
+
         $cmd = sprintf(
-            '%s -s -L -m 5 -o - %s 2>/dev/null',
+            '%s -s -L -m 5 %s -o - %s 2>/dev/null',
             escapeshellarg($this->curlPath),
+            $resolve,
             escapeshellarg($url)
         );
         $html = shell_exec($cmd);
@@ -53,7 +65,6 @@ class Scraper
     {
         $lower = strtolower(substr($html, 0, 4096));
 
-        // Cloudflare / PerimeterX / Akamai / generic block pages
         $markers = [
             'access to this page has been denied',
             'attention required',
@@ -75,7 +86,6 @@ class Scraper
             }
         }
 
-        // Block pages tend to have very little visible text relative to HTML size
         $textLen = strlen(strip_tags(substr($html, 0, 8192)));
         if (strlen($html) > 2000 && $textLen < 200) {
             return true;
@@ -84,7 +94,7 @@ class Scraper
         return false;
     }
 
-    public function fetchViaBrowser(string $url): ?string
+    private function fetchViaBrowser(string $url): ?string
     {
         // Phase 1B: headless Chromium fallback (not yet enabled)
         return null;
