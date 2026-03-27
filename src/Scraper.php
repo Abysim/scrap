@@ -37,10 +37,6 @@ class Scraper
 
     public function fetchViaTls(string $url): ?string
     {
-        if (!file_exists($this->curlPath)) {
-            return null;
-        }
-
         $cmd = sprintf(
             '%s -s -L -m 5 -o - %s 2>/dev/null',
             escapeshellarg($this->curlPath),
