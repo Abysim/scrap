@@ -9,7 +9,7 @@ class Scraper
 
     public function __construct()
     {
-        $this->logPath = dirname(__DIR__, 2) . '/logs/scraper.log';
+        $this->logPath = dirname(__DIR__) . '/logs/scraper.log';
         $this->curlPath = $_ENV['CURL_IMPERSONATE_PATH'] ?? (getenv('HOME') . '/bin/curl_chrome131');
     }
 
