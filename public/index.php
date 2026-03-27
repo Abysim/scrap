@@ -74,12 +74,14 @@ if (!flock($lock, LOCK_EX | LOCK_NB)) {
 set_time_limit(25);
 
 // --- Scrape ---
-$render = isset($_GET['render']) && $_GET['render'] === 'true';
-$scraper = new \App\Scraper();
-$result = $scraper->scrape($url, $ip, $render);
-
-flock($lock, LOCK_UN);
-fclose($lock);
+try {
+    $render = isset($_GET['render']) && $_GET['render'] === 'true';
+    $scraper = new \App\Scraper();
+    $result = $scraper->scrape($url, $ip, $render);
+} finally {
+    flock($lock, LOCK_UN);
+    fclose($lock);
+}
 
 // --- Response ---
 if ($result['html'] !== null) {

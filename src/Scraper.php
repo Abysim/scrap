@@ -115,8 +115,7 @@ class Scraper
 
         // Tier 3: structural check — only on pages < 50KB (large pages are not skeletons)
         if ($len < 51200) {
-            $cleaned = preg_replace('/<script\b[^>]*>.*?<\/script>/is', '', $html);
-            $cleaned = preg_replace('/<style\b[^>]*>.*?<\/style>/is', '', $cleaned ?? '') ?? '';
+            $cleaned = preg_replace('/<(?:script|style)\b[^>]*>.*?<\/(?:script|style)>/is', '', $html) ?? '';
 
             if (strlen(trim(strip_tags(substr($cleaned, 0, 32768)))) < 50) {
                 return true;
