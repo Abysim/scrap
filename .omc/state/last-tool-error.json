@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"curl -s \\\"https://scrap.abysim.com/scrape?url=https://example.com&api_key=7cb168c526f35692aeb94311dc2f5f390c9b07eb2e0dc592\\\" 2>&1 && echo '---LOG---' && ssh vps-web \\\"cat ~/web/scrap.abysi...",
-  "error": "Exit code 1\nAll fetch methods failed---LOG---",
-  "timestamp": "2026-03-27T17:39:42.320Z",
-  "retry_count": 1
-}
