@@ -86,8 +86,9 @@ class Scraper
             }
         }
 
+        // JS skeletons (<2KB) and block pages (>2KB) both lack visible text
         $textLen = strlen(strip_tags(substr($html, 0, 8192)));
-        if (strlen($html) > 2000 && $textLen < 200) {
+        if ($textLen < 500) {
             return true;
         }
 
