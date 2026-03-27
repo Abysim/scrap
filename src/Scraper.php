@@ -86,11 +86,10 @@ class Scraper
             }
         }
 
-        // Strip script/style content before measuring visible text
-        $sample = substr($html, 0, 16384);
-        $cleaned = preg_replace('/<script\b[^>]*>.*?<\/script>/is', '', $sample);
+        // Strip script/style from full HTML (truncating mid-tag breaks regex)
+        $cleaned = preg_replace('/<script\b[^>]*>.*?<\/script>/is', '', $html);
         $cleaned = preg_replace('/<style\b[^>]*>.*?<\/style>/is', '', $cleaned);
-        $textLen = strlen(trim(strip_tags($cleaned)));
+        $textLen = strlen(trim(strip_tags(substr($cleaned, 0, 16384))));
         if ($textLen < 200) {
             return true;
         }
