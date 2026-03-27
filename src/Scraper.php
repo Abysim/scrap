@@ -43,10 +43,45 @@ class Scraper
             escapeshellarg($url)
         );
         $html = shell_exec($cmd);
-        if ($html !== null && strlen($html) >= 200) {
+        if ($html !== null && strlen($html) >= 200 && !$this->isBlockPage($html)) {
             return $html;
         }
         return null;
+    }
+
+    private function isBlockPage(string $html): bool
+    {
+        $lower = strtolower(substr($html, 0, 4096));
+
+        // Cloudflare / PerimeterX / Akamai / generic block pages
+        $markers = [
+            'access to this page has been denied',
+            'attention required',
+            'just a moment',
+            'checking your browser',
+            'enable javascript and cookies',
+            'ray id:',
+            'cf-browser-verification',
+            'perimeterx',
+            'px-captcha',
+            'are you a human',
+            'bot protection',
+            'ddos protection by',
+        ];
+
+        foreach ($markers as $marker) {
+            if (str_contains($lower, $marker)) {
+                return true;
+            }
+        }
+
+        // Block pages tend to have very little visible text relative to HTML size
+        $textLen = strlen(strip_tags($html));
+        if (strlen($html) > 2000 && $textLen < 200) {
+            return true;
+        }
+
+        return false;
     }
 
     public function fetchViaBrowser(string $url): ?string
