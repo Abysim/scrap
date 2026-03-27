@@ -4,6 +4,27 @@ namespace App;
 
 class Scraper
 {
+    // Tier 1: Provider-specific markers — checked on ANY page size.
+    private const TIER1_MARKERS = [
+        '__cf_chl_f_tk=', 'cf-error-code', '/cdn-cgi/challenge-platform/',  // Cloudflare
+        'window._pxappid', 'captcha.px-cdn.net',                            // PerimeterX / HUMAN
+        'captcha-delivery.com',                                              // DataDome
+        '_incapsula_resource', 'incapsula incident id',                      // Imperva
+        'pardon our interruption',                                           // Akamai
+        'sucuri website firewall',                                           // Sucuri WAF
+        'kpsdk.scriptstart',                                                 // Kasada
+        'blocked by network security',                                       // Generic
+        'ray id:', 'cf-browser-verification', 'ddos protection by',          // Cloudflare legacy
+    ];
+
+    // Tier 2: Ambiguous markers — only on small pages (< 10KB).
+    private const TIER2_MARKERS = [
+        'just a moment', 'checking your browser', 'access to this page has been denied',
+        'attention required', 'are you a human', 'bot protection',
+        'enable javascript and cookies', 'perimeterx', 'px-captcha',
+        'g-recaptcha', 'h-captcha', 'request unsuccessful',
+    ];
+
     private string $logPath;
     private string $curlPath;
 
@@ -17,7 +38,6 @@ class Scraper
     {
         $start = microtime(true);
 
-        // If render=true, skip TLS and go straight to browser (Phase 1B)
         if (!$render) {
             $html = $this->fetchViaTls($url, $resolvedIp);
             if ($html !== null) {
@@ -73,35 +93,7 @@ class Scraper
         $len = strlen($html);
         $head = strtolower(substr($html, 0, 4096));
 
-        // Tier 1: Provider-specific markers — checked on ANY page size.
-        // These are highly specific and essentially never appear in real content.
-        $tier1 = [
-            // Cloudflare
-            '__cf_chl_f_tk=',
-            'cf-error-code',
-            '/cdn-cgi/challenge-platform/',
-            // PerimeterX / HUMAN Security
-            'window._pxappid',
-            'captcha.px-cdn.net',
-            // DataDome
-            'captcha-delivery.com',
-            // Imperva / Incapsula
-            '_incapsula_resource',
-            'incapsula incident id',
-            // Akamai
-            'pardon our interruption',
-            // Sucuri WAF
-            'sucuri website firewall',
-            // Kasada
-            'kpsdk.scriptstart',
-            // Generic
-            'blocked by network security',
-            // Cloudflare legacy (still on some edge configs)
-            'ray id:',
-            'cf-browser-verification',
-            'ddos protection by',
-        ];
-        foreach ($tier1 as $marker) {
+        foreach (self::TIER1_MARKERS as $marker) {
             if (str_contains($head, $marker)) {
                 return true;
             }
@@ -112,46 +104,26 @@ class Scraper
             return true;
         }
 
-        // Tier 2: Ambiguous markers — only on small pages (< 10KB).
-        // These strings can appear in nav/footer of large real pages.
+        // Tier 2: only on small pages — these strings appear in nav/footer of large real pages
         if ($len < 10240) {
-            $tier2 = [
-                'just a moment',
-                'checking your browser',
-                'access to this page has been denied',
-                'attention required',
-                'are you a human',
-                'bot protection',
-                'enable javascript and cookies',
-                'perimeterx',
-                'px-captcha',
-                'g-recaptcha',
-                'h-captcha',
-                'request unsuccessful',
-            ];
-            foreach ($tier2 as $marker) {
+            foreach (self::TIER2_MARKERS as $marker) {
                 if (str_contains($head, $marker)) {
                     return true;
                 }
             }
         }
 
-        // Tier 3: Structural check — only on pages < 50KB.
-        // Large pages (50KB+) are clearly not skeletons — skip expensive regex.
+        // Tier 3: structural check — only on pages < 50KB (large pages are not skeletons)
         if ($len < 51200) {
-            // Strip scripts/styles from full HTML (truncating mid-tag breaks regex)
             $cleaned = preg_replace('/<script\b[^>]*>.*?<\/script>/is', '', $html);
-            $cleaned = preg_replace('/<style\b[^>]*>.*?<\/style>/is', '', $cleaned ?? '');
+            $cleaned = preg_replace('/<style\b[^>]*>.*?<\/style>/is', '', $cleaned ?? '') ?? '';
 
-            // Check visible text in first 32KB of cleaned HTML
-            $visibleText = trim(strip_tags(substr($cleaned ?? '', 0, 32768)));
-
-            if (strlen($visibleText) < 50) {
+            if (strlen(trim(strip_tags(substr($cleaned, 0, 32768)))) < 50) {
                 return true;
             }
 
-            // No semantic content elements = JS skeleton (even if some nav text exists)
-            if (!preg_match('/<(p|h[1-6]|article|section|li|td|blockquote|pre)\b/i', $cleaned ?? '')) {
+            // No semantic content elements = JS skeleton
+            if (!preg_match('/<(p|h[1-6]|article|section|li|td|blockquote|pre)\b/i', $cleaned)) {
                 return true;
             }
         }
