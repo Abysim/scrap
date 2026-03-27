@@ -89,7 +89,7 @@ class Scraper
         // Strip script/style from full HTML (truncating mid-tag breaks regex)
         $cleaned = preg_replace('/<script\b[^>]*>.*?<\/script>/is', '', $html);
         $cleaned = preg_replace('/<style\b[^>]*>.*?<\/style>/is', '', $cleaned);
-        $textLen = strlen(trim(strip_tags(substr($cleaned, 0, 16384))));
+        $textLen = strlen(trim(strip_tags(substr($cleaned, 0, 32768))));
         if ($textLen < 200) {
             return true;
         }
