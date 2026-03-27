@@ -7,8 +7,6 @@ require PROJECT_ROOT . '/vendor/autoload.php';
 $dotenv = Dotenv\Dotenv::createImmutable(PROJECT_ROOT);
 $dotenv->load();
 
-require PROJECT_ROOT . '/src/Scraper.php';
-
 // --- Routing ---
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 

@@ -76,7 +76,7 @@ class Scraper
         }
 
         // Block pages tend to have very little visible text relative to HTML size
-        $textLen = strlen(strip_tags($html));
+        $textLen = strlen(strip_tags(substr($html, 0, 8192)));
         if (strlen($html) > 2000 && $textLen < 200) {
             return true;
         }
@@ -86,13 +86,7 @@ class Scraper
 
     public function fetchViaBrowser(string $url): ?string
     {
-        // Phase 1B: Chromium fallback — activated after TLS-only validation period
-        // When enabled, this will:
-        // 1. Check /proc/meminfo for available RAM (skip if <80MB)
-        // 2. Check circuit breaker (skip if 3+ failures in last 10 min)
-        // 3. Launch headless Chromium via chrome-php/chrome
-        // 4. Navigate, wait for networkIdle, extract HTML
-        // 5. Kill browser process in finally block
+        // Phase 1B: headless Chromium fallback (not yet enabled)
         return null;
     }
 
