@@ -60,31 +60,9 @@ class Scraper
         return ['html' => null, 'method' => null, 'error' => 'All methods failed'];
     }
 
-    /**
-     * Raw fetch — no content detection, returns whatever the server sends.
-     * Used for API proxying (GDELT, etc.) where responses are JSON, not HTML.
-     */
     private function fetchRaw(string $url, ?string $resolvedIp, float $start): array
     {
-        $resolve = '';
-        if ($resolvedIp !== null) {
-            $host = parse_url($url, PHP_URL_HOST);
-            if ($host !== null) {
-                $resolve = sprintf(
-                    '--resolve %s:80:%s --resolve %s:443:%s',
-                    escapeshellarg($host), escapeshellarg($resolvedIp),
-                    escapeshellarg($host), escapeshellarg($resolvedIp)
-                );
-            }
-        }
-
-        $cmd = sprintf(
-            '%s -s -L -m 10 %s -o - %s 2>/dev/null',
-            escapeshellarg($this->curlPath),
-            $resolve,
-            escapeshellarg($url)
-        );
-        $body = shell_exec($cmd);
+        $body = $this->curlFetch($url, $resolvedIp, 10);
         if ($body !== null && strlen($body) > 0) {
             $this->log($url, 'raw', 200, $start);
             return ['html' => $body, 'method' => 'raw', 'error' => null];
@@ -96,7 +74,16 @@ class Scraper
 
     private function fetchViaTls(string $url, ?string $resolvedIp = null): ?string
     {
-        // Pin DNS to the already-validated IP to prevent DNS rebinding (TOCTOU)
+        $html = $this->curlFetch($url, $resolvedIp, 5);
+        if ($html !== null && strlen($html) >= 200 && !$this->isUnusablePage($html)) {
+            return $html;
+        }
+        return null;
+    }
+
+    /** Run curl-impersonate with DNS pinning. */
+    private function curlFetch(string $url, ?string $resolvedIp, int $timeout): ?string
+    {
         $resolve = '';
         if ($resolvedIp !== null) {
             $host = parse_url($url, PHP_URL_HOST);
@@ -110,16 +97,13 @@ class Scraper
         }
 
         $cmd = sprintf(
-            '%s -s -L -m 5 %s -o - %s 2>/dev/null',
+            '%s -s -L -m %d %s -o - %s 2>/dev/null',
             escapeshellarg($this->curlPath),
+            $timeout,
             $resolve,
             escapeshellarg($url)
         );
-        $html = shell_exec($cmd);
-        if ($html !== null && strlen($html) >= 200 && !$this->isUnusablePage($html)) {
-            return $html;
-        }
-        return null;
+        return shell_exec($cmd);
     }
 
     /**
