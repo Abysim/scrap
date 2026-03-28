@@ -76,8 +76,9 @@ set_time_limit(25);
 // --- Scrape ---
 try {
     $render = isset($_GET['render']) && $_GET['render'] === 'true';
+    $raw = isset($_GET['raw']) && $_GET['raw'] === 'true';
     $scraper = new \App\Scraper();
-    $result = $scraper->scrape($url, $ip, $render);
+    $result = $scraper->scrape($url, $ip, $render, $raw);
 } finally {
     flock($lock, LOCK_UN);
     fclose($lock);
@@ -85,7 +86,11 @@ try {
 
 // --- Response ---
 if ($result['html'] !== null) {
-    header('Content-Type: text/html; charset=utf-8');
+    if ($result['method'] === 'raw') {
+        header('Content-Type: application/octet-stream');
+    } else {
+        header('Content-Type: text/html; charset=utf-8');
+    }
     header('X-Scrape-Method: ' . $result['method']);
     echo $result['html'];
 } else {

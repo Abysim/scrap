@@ -34,9 +34,13 @@ class Scraper
         $this->curlPath = $_ENV['CURL_IMPERSONATE_PATH'] ?? (getenv('HOME') . '/bin/curl_chrome131');
     }
 
-    public function scrape(string $url, ?string $resolvedIp = null, bool $render = false): array
+    public function scrape(string $url, ?string $resolvedIp = null, bool $render = false, bool $raw = false): array
     {
         $start = microtime(true);
+
+        if ($raw) {
+            return $this->fetchRaw($url, $resolvedIp, $start);
+        }
 
         if (!$render) {
             $html = $this->fetchViaTls($url, $resolvedIp);
@@ -54,6 +58,40 @@ class Scraper
 
         $this->log($url, null, 502, $start);
         return ['html' => null, 'method' => null, 'error' => 'All methods failed'];
+    }
+
+    /**
+     * Raw fetch — no content detection, returns whatever the server sends.
+     * Used for API proxying (GDELT, etc.) where responses are JSON, not HTML.
+     */
+    private function fetchRaw(string $url, ?string $resolvedIp, float $start): array
+    {
+        $resolve = '';
+        if ($resolvedIp !== null) {
+            $host = parse_url($url, PHP_URL_HOST);
+            if ($host !== null) {
+                $resolve = sprintf(
+                    '--resolve %s:80:%s --resolve %s:443:%s',
+                    escapeshellarg($host), escapeshellarg($resolvedIp),
+                    escapeshellarg($host), escapeshellarg($resolvedIp)
+                );
+            }
+        }
+
+        $cmd = sprintf(
+            '%s -s -L -m 10 %s -o - %s 2>/dev/null',
+            escapeshellarg($this->curlPath),
+            $resolve,
+            escapeshellarg($url)
+        );
+        $body = shell_exec($cmd);
+        if ($body !== null && strlen($body) > 0) {
+            $this->log($url, 'raw', 200, $start);
+            return ['html' => $body, 'method' => 'raw', 'error' => null];
+        }
+
+        $this->log($url, null, 502, $start);
+        return ['html' => null, 'method' => null, 'error' => 'Raw fetch failed'];
     }
 
     private function fetchViaTls(string $url, ?string $resolvedIp = null): ?string
