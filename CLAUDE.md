@@ -106,6 +106,9 @@ ssh vps-web "cd ~/web/scrap.abysim.com/private && composer install --no-dev"
 - All Hestia services must stay active — scraper must coexist
 - Sequential processing only — never run concurrent Chromium instances
 
+## Local Development
+- **PHP CLI:** Use `p` (PHP 8.4) instead of `php` (PHP 7.2 XAMPP). `p` is at `/usr/local/bin/p`. Use for syntax checks (`p -l`), composer (`p /usr/local/bin/composer`), and all CLI operations.
+
 ## Gotchas
 - **`open_basedir`** restricts PHP file access to `private/`, `public_html/`, and system paths. `~/bin/` and `~/web/scrap.abysim.com/logs/` are NOT accessible. That's why logs go to `private/logs/` and `file_exists()` cannot check the curl binary path.
 - **`shell_exec` was disabled by default** in Hestia's PHP-FPM. Fixed in global `/etc/php/8.4/fpm/php.ini`. Per-pool `php_admin_value[disable_functions]` does NOT work to re-enable functions — PHP removes them from the function table at startup.
