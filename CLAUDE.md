@@ -11,15 +11,15 @@ Returns raw HTML for a given URL. Used as a fallback step in the Laravel `api` p
 
 ## Tech Stack
 - **Language**: PHP 8.4
-- **Dependencies**: `vlucas/phpdotenv` (Phase 1A), `chrome-php/chrome` (Phase 1B, conditional)
-- **External binary**: `curl-impersonate-chrome` at `~/bin/curl_chrome116` (provides Chrome TLS fingerprint)
+- **Dependencies**: `vlucas/phpdotenv`, `chrome-php/chrome`
+- **External binaries**: `curl-impersonate-chrome` at `~/bin/curl_chrome131` (TLS fingerprint), Chrome for Testing at `~/bin/chrome-for-testing/chrome` (headless rendering)
 - **No framework** — bare PHP with PSR-4 autoloading
 
 ## Architecture
 
 ### Hybrid Two-Tier Fetch
 1. **Fast path (TLS impersonation):** `curl-impersonate` binary mimics Chrome's TLS fingerprint (JA3/JA4). ~5MB RAM, 2-5 seconds.
-2. **Heavy path (Chromium):** Headless Chromium via `chrome-php/chrome`. Handles JS challenges (Cloudflare Under Attack). ~300MB RAM (swap), 10-30 seconds. Phase 1B — stub only, not yet activated.
+2. **Heavy path (Chromium):** Headless Chromium via `chrome-php/chrome`. Handles JS challenges (Cloudflare Under Attack). ~300MB RAM (swap), 5-30 seconds. Includes pre-flight memory check (<100MB available = skip), orphaned process cleanup, and NETWORK_IDLE wait for post-JS redirects.
 
 ### Content Detection (`isBlockPage`)
 Before returning HTML, the TLS path checks for insufficient content:
@@ -28,8 +28,8 @@ Before returning HTML, the TLS path checks for insufficient content:
 - When detected, `fetchViaTls()` returns null → browser fallback gets a chance (Phase 1B) → if browser also fails → 502
 
 ### Staged Rollout
-- **Phase 1A (current):** TLS-only. `fetchViaBrowser()` is a stub returning null.
-- **Phase 1B (conditional):** Add Chromium after 1+ week if TLS success rate <70%.
+- **Phase 1A:** TLS impersonation via curl-impersonate.
+- **Phase 1B (active):** Headless Chromium fallback via chrome-php/chrome. Activated 2026-04-02 after confirming 22.3% 502 rate (132/593 requests). Chrome for Testing v147 installed on VPS. Disable by removing `CHROMIUM_PATH` from `.env`.
 
 ## Deployment
 
@@ -67,8 +67,9 @@ ssh vps-web "cd ~/web/scrap.abysim.com/private && composer install --no-dev"
 ```
 
 ### Environment
-- `.env` on VPS: `~/web/scrap.abysim.com/private/.env` (contains `API_KEY`, `CURL_IMPERSONATE_PATH`)
-- `curl-impersonate` binary: `~/bin/curl_chrome116`
+- `.env` on VPS: `~/web/scrap.abysim.com/private/.env` (contains `API_KEY`, `CURL_IMPERSONATE_PATH`, `CHROMIUM_PATH`)
+- `curl-impersonate` binary: `~/bin/curl_chrome131`
+- Chrome for Testing binary: `~/bin/chrome-for-testing/chrome` (v147, installed via static download -- not snap)
 - Composer: `/usr/local/bin/composer` (in PATH)
 - Root access: `sudo` requires password (interactive). Only needed for `apt install` (Phase 1B Chromium).
 
@@ -95,7 +96,7 @@ ssh vps-web "cd ~/web/scrap.abysim.com/private && composer install --no-dev"
 ## Consumer
 - **Laravel `api` project** (`/DATA/xampp/htdocs/api/`) calls this service as step 4 in `FreeNewsService::extractContent()`, before ScraperAPI (step 5).
 - Config on bigcats: `VPSCRAPER_URL=https://scrap.abysim.com/scrape`, `VPSCRAPER_KEY=<api-key>`
-- Timeout: 20 seconds from Laravel side
+- Timeout: 55 seconds from Laravel side (bumped from 20s for Phase 1B browser path)
 - DailyStat counter: `fetch_vps_scraper`
 
 ## VPS Constraints
