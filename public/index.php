@@ -71,7 +71,7 @@ if (!flock($lock, LOCK_EX | LOCK_NB)) {
     exit;
 }
 
-set_time_limit(25);
+set_time_limit(55);
 
 // --- Scrape ---
 try {

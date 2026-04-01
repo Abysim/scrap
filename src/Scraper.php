@@ -27,11 +27,13 @@ class Scraper
 
     private string $logPath;
     private string $curlPath;
+    private string $chromiumPath;
 
     public function __construct()
     {
         $this->logPath = dirname(__DIR__) . '/logs/scraper.log';
         $this->curlPath = $_ENV['CURL_IMPERSONATE_PATH'] ?? (getenv('HOME') . '/bin/curl_chrome131');
+        $this->chromiumPath = $_ENV['CHROMIUM_PATH'] ?? '';
     }
 
     public function scrape(string $url, ?string $resolvedIp = null, bool $render = false, bool $raw = false): array
@@ -154,8 +156,77 @@ class Scraper
 
     private function fetchViaBrowser(string $url): ?string
     {
-        // Phase 1B: headless Chromium fallback (not yet enabled)
-        return null;
+        if ($this->chromiumPath === '') {
+            return null;
+        }
+
+        // Skip browser if available RAM < 100MB to avoid OOM-killing Hestia services
+        $memInfo = @shell_exec("awk '/MemAvailable/ {print \$2}' /proc/meminfo");
+        $memAvailable = $memInfo !== null ? (int) $memInfo : 0;
+        if ($memAvailable > 0 && $memAvailable < 102400) {
+            $this->logError('browser_low_memory', $url, "MemAvailable={$memAvailable}kB");
+            return null;
+        }
+
+        // Kill any orphaned Chromium from a previous crashed request
+        // flock in index.php guarantees no legitimate concurrent instance
+        @shell_exec('pkill -f ' . escapeshellarg(basename($this->chromiumPath) . '.*headless') . ' 2>/dev/null');
+
+        $browser = null;
+        try {
+            $factory = new \HeadlessChromium\BrowserFactory($this->chromiumPath);
+            $browser = $factory->createBrowser([
+                'headless' => true,
+                'noSandbox' => true,
+                'startupTimeout' => 15,
+                'windowSize' => [1024, 768],
+                'ignoreCertificateErrors' => true,
+                'customFlags' => [
+                    '--disable-gpu',
+                    '--disable-dev-shm-usage',
+                    '--disable-extensions',
+                    '--disable-features=IsolateOrigins,site-per-process',
+                ],
+            ]);
+
+            $page = $browser->createPage();
+            // NETWORK_IDLE captures post-JS redirects (e.g. Cloudflare challenge completion)
+            $page->navigate($url)->waitForNavigation(
+                \HeadlessChromium\Page::NETWORK_IDLE,
+                30000
+            );
+
+            return $page->evaluate('document.documentElement.outerHTML')
+                ->getReturnValue();
+
+        } catch (\HeadlessChromium\Exception\BrowserConnectionFailed $e) {
+            $this->logError('browser_start_failed', $url, $e->getMessage());
+            return null;
+        } catch (\HeadlessChromium\Exception\OperationTimedOut $e) {
+            $this->logError('browser_timeout', $url, $e->getMessage());
+            return null;
+        } catch (\HeadlessChromium\Exception\NavigationExpired $e) {
+            $this->logError('browser_nav_expired', $url, $e->getMessage());
+            return null;
+        } catch (\Throwable $e) {
+            $this->logError('browser_error', $url, $e->getMessage());
+            return null;
+        } finally {
+            if ($browser !== null) {
+                try { $browser->close(); } catch (\Throwable $e) {}
+            }
+        }
+    }
+
+    private function logError(string $type, string $url, string $message): void
+    {
+        $entry = json_encode([
+            'time' => date('c'),
+            'url' => $url,
+            'error_type' => $type,
+            'error_message' => $message,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        @file_put_contents($this->logPath, $entry . "\n", FILE_APPEND | LOCK_EX);
     }
 
     private function log(string $url, ?string $method, int $status, float $start): void
