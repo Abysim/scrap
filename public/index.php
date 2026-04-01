@@ -71,6 +71,7 @@ if (!flock($lock, LOCK_EX | LOCK_NB)) {
     exit;
 }
 
+// Browser fallback: up to 15s startup + 30s nav + 5s TLS attempt = 50s worst case
 set_time_limit(55);
 
 // --- Scrape ---

@@ -220,24 +220,28 @@ class Scraper
 
     private function logError(string $type, string $url, string $message): void
     {
-        $entry = json_encode([
+        $this->writeLog([
             'time' => date('c'),
             'url' => $url,
             'error_type' => $type,
             'error_message' => $message,
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        @file_put_contents($this->logPath, $entry . "\n", FILE_APPEND | LOCK_EX);
+        ]);
     }
 
     private function log(string $url, ?string $method, int $status, float $start): void
     {
-        $entry = json_encode([
+        $this->writeLog([
             'time' => date('c'),
             'url' => $url,
             'method' => $method,
             'status' => $status,
             'duration_ms' => round((microtime(true) - $start) * 1000),
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        ]);
+    }
+
+    private function writeLog(array $data): void
+    {
+        $entry = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         @file_put_contents($this->logPath, $entry . "\n", FILE_APPEND | LOCK_EX);
     }
 }
