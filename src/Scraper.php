@@ -240,8 +240,10 @@ class Scraper
                     ->getReturnValue();
             }
 
-            // Gate: reject browser result if it's still a block page
-            if ($html !== null && $this->isUnusablePage($html)) {
+            // Gate: reject browser result if it's still a definitive block page (Tier 1 only).
+            // Full isUnusablePage() is too aggressive for browser-rendered HTML (Tier 2/3
+            // false-positive on JS-rendered SPAs that have already executed their scripts).
+            if ($html !== null && $this->isBrowserBlocked($html)) {
                 $this->logError('browser_still_blocked', $url, 'Browser-rendered HTML is still a block page');
                 return null;
             }
@@ -271,6 +273,18 @@ class Scraper
     {
         $head = strtolower(substr($html, 0, 4096));
         return str_contains($head, 'just a moment') || str_contains($head, '/cdn-cgi/challenge-platform/');
+    }
+
+    /** Tier 1 block check only -- safe for browser-rendered HTML (no structural/ambiguous checks). */
+    private function isBrowserBlocked(string $html): bool
+    {
+        $head = strtolower(substr($html, 0, 4096));
+        foreach (self::TIER1_MARKERS as $marker) {
+            if (str_contains($head, $marker)) {
+                return true;
+            }
+        }
+        return $this->isCloudflareChallenge($html);
     }
 
     private function logError(string $type, string $url, string $message): void
