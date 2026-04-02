@@ -135,15 +135,28 @@ class Scraper
      * Tiered detection based on crawl4ai's antibot_detector approach.
      * Size-gated to avoid false positives on large real pages.
      */
-    private function isUnusablePage(string $html): bool
+    private function getHeadLower(string $html): string
     {
-        $len = strlen($html);
-        $head = strtolower(substr($html, 0, 4096));
+        return strtolower(substr($html, 0, 4096));
+    }
 
+    private function hasTier1Marker(string $head): bool
+    {
         foreach (self::TIER1_MARKERS as $marker) {
             if (str_contains($head, $marker)) {
                 return true;
             }
+        }
+        return false;
+    }
+
+    private function isUnusablePage(string $html): bool
+    {
+        $len = strlen($html);
+        $head = $this->getHeadLower($html);
+
+        if ($this->hasTier1Marker($head)) {
+            return true;
         }
 
         // Akamai reference number pattern
@@ -272,20 +285,15 @@ class Scraper
 
     private function isCloudflareChallenge(string $html): bool
     {
-        $head = strtolower(substr($html, 0, 4096));
+        $head = $this->getHeadLower($html);
         return str_contains($head, 'just a moment') || str_contains($head, '/cdn-cgi/challenge-platform/');
     }
 
-    /** Tier 1 block check only -- safe for browser-rendered HTML (no structural/ambiguous checks). */
+    /** Tier 1 markers + "just a moment" -- safe for browser-rendered HTML (no structural/ambiguous checks). */
     private function isBrowserBlocked(string $html): bool
     {
-        $head = strtolower(substr($html, 0, 4096));
-        foreach (self::TIER1_MARKERS as $marker) {
-            if (str_contains($head, $marker)) {
-                return true;
-            }
-        }
-        return $this->isCloudflareChallenge($html);
+        $head = $this->getHeadLower($html);
+        return $this->hasTier1Marker($head) || str_contains($head, 'just a moment');
     }
 
     private function logError(string $type, string $url, string $message): void
