@@ -17,6 +17,29 @@ class Scraper
         'ray id:', 'cf-browser-verification', 'ddos protection by',          // Cloudflare legacy
     ];
 
+    // Stealth JS injected before page load to mask headless Chrome signals.
+    private const STEALTH_JS = <<<'JS'
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true });
+    window.chrome = { app: { isInstalled: false }, csi: function(){}, loadTimes: function(){},
+      runtime: { connect: function(){}, sendMessage: function(){}, id: undefined }};
+    Object.defineProperty(navigator, 'plugins', { get: () => {
+      const p = [{name:'Chrome PDF Plugin',filename:'internal-pdf-viewer',description:'PDF'},
+        {name:'Chrome PDF Viewer',filename:'mhjfbmdgcfjbbpaeojofohoefgiehjai',description:''},
+        {name:'Native Client',filename:'internal-nacl-plugin',description:''}];
+      p.refresh=()=>{};p.item=(i)=>p[i];p.namedItem=(n)=>p.find(x=>x.name===n);
+      p[Symbol.iterator]=Array.prototype[Symbol.iterator];return p;
+    }});
+    Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+    const _gp = WebGLRenderingContext.prototype.getParameter;
+    WebGLRenderingContext.prototype.getParameter = function(p) {
+      if (p===37445) return 'Intel Inc.'; if (p===37446) return 'Intel Iris OpenGL Engine';
+      return _gp.call(this, p);
+    };
+    const _pq = navigator.permissions.query.bind(navigator.permissions);
+    navigator.permissions.query = (p) =>
+      p.name==='notifications' ? Promise.resolve({state:Notification.permission}) : _pq(p);
+    JS;
+
     // Tier 2: Ambiguous markers — only on small pages (< 10KB).
     private const TIER2_MARKERS = [
         'just a moment', 'checking your browser', 'access to this page has been denied',
@@ -176,28 +199,54 @@ class Scraper
         try {
             $factory = new \HeadlessChromium\BrowserFactory($this->chromiumPath);
             $browser = $factory->createBrowser([
-                'headless' => true,
+                'headless' => false,
                 'noSandbox' => true,
                 'startupTimeout' => 15,
-                'windowSize' => [1024, 768],
+                'windowSize' => [1920, 1080],
                 'ignoreCertificateErrors' => true,
+                'userAgent' => 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
+                'excludedSwitches' => ['--enable-automation'],
                 'customFlags' => [
+                    '--headless=new',
+                    '--disable-blink-features=AutomationControlled',
                     '--disable-gpu',
                     '--disable-dev-shm-usage',
                     '--disable-extensions',
                     '--disable-features=IsolateOrigins,site-per-process',
+                    '--hide-scrollbars',
+                    '--mute-audio',
+                    '--font-render-hinting=none',
+                    '--lang=en-US,en',
+                    '--no-first-run',
+                    '--no-default-browser-check',
                 ],
             ]);
 
             $page = $browser->createPage();
-            // NETWORK_IDLE captures post-JS redirects (e.g. Cloudflare challenge completion)
+            $page->addPreScript(self::STEALTH_JS);
+
             $page->navigate($url)->waitForNavigation(
                 \HeadlessChromium\Page::NETWORK_IDLE,
-                30000
+                20000
             );
 
-            return $page->evaluate('document.documentElement.outerHTML')
+            $html = $page->evaluate('document.documentElement.outerHTML')
                 ->getReturnValue();
+
+            // Poll for Cloudflare challenge resolution (challenges redirect after JS execution)
+            for ($i = 0; $i < 10 && $html !== null && $this->isCloudflareChallenge($html); $i++) {
+                usleep(1_000_000);
+                $html = $page->evaluate('document.documentElement.outerHTML')
+                    ->getReturnValue();
+            }
+
+            // Gate: reject browser result if it's still a block page
+            if ($html !== null && $this->isUnusablePage($html)) {
+                $this->logError('browser_still_blocked', $url, 'Browser-rendered HTML is still a block page');
+                return null;
+            }
+
+            return $html;
 
         } catch (\HeadlessChromium\Exception\BrowserConnectionFailed $e) {
             $this->logError('browser_start_failed', $url, $e->getMessage());
@@ -216,6 +265,12 @@ class Scraper
                 try { $browser->close(); } catch (\Throwable $e) {}
             }
         }
+    }
+
+    private function isCloudflareChallenge(string $html): bool
+    {
+        $head = strtolower(substr($html, 0, 4096));
+        return str_contains($head, 'just a moment') || str_contains($head, '/cdn-cgi/challenge-platform/');
     }
 
     private function logError(string $type, string $url, string $message): void
